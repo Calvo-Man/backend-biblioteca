@@ -1,3 +1,4 @@
+
 import {
   Injectable,
   NotFoundException,
@@ -6,13 +7,14 @@ import {
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 
 import { unlink } from 'fs/promises';
 import { join } from 'path';
 
 import { Book } from './entities/book.entity';
 import { Category } from '../categories/entities/category.entity';
+import { Copy, CopyStatus } from '../copies/entities/copy.entity';
 
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
@@ -25,6 +27,9 @@ export class BooksService {
 
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
+
+    @InjectRepository(Copy)
+    private readonly copyRepository: Repository<Copy>,
   ) {}
 
   private async deleteCover(filename?: string | null) {
@@ -86,7 +91,7 @@ export class BooksService {
     return this.bookRepository.save(book);
   }
 
-  // Listar libros con paginación y búsqueda
+  // Listar libros para administración
   async findAll(page = 1, limit = 10, search?: string) {
     const skip = (page - 1) * limit;
 
@@ -119,6 +124,109 @@ export class BooksService {
       totalPages: Math.ceil(total / limit),
     };
   }
+
+  // ==========================================
+  // CATÁLOGO PARA ADMINISTRADORES Y ESTUDIANTES
+  // ==========================================
+
+  // Listar únicamente libros activos con disponibilidad
+  async findCatalog(page = 1, limit = 12, search?: string) {
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(100, Math.max(1, limit));
+    const skip = (safePage - 1) * safeLimit;
+
+    const query = this.bookRepository
+      .createQueryBuilder('book')
+      .leftJoinAndSelect('book.category', 'category')
+      .where('book.is_active = :isActive', {
+        isActive: true,
+      })
+      .orderBy('book.title', 'ASC')
+      .skip(skip)
+      .take(safeLimit);
+
+    if (search?.trim()) {
+      query.andWhere(
+        `(
+          book.title LIKE :search OR
+          book.author LIKE :search OR
+          book.isbn LIKE :search OR
+          category.name LIKE :search
+        )`,
+        { search: `%${search.trim()}%` },
+      );
+    }
+
+    const [books, total] = await query.getManyAndCount();
+
+    const bookIds = books.map((book) => book.id);
+
+    const availability = bookIds.length
+      ? await this.copyRepository
+          .createQueryBuilder('copy')
+          .select('copy.book_id', 'book_id')
+          .addSelect('COUNT(copy.id)', 'available_copies')
+          .where('copy.book_id IN (:...bookIds)', { bookIds })
+          .andWhere('copy.status = :status', {
+            status: CopyStatus.AVAILABLE,
+          })
+          .groupBy('copy.book_id')
+          .getRawMany()
+      : [];
+
+    const availabilityMap = new Map(
+      availability.map((item) => [
+        Number(item.book_id),
+        Number(item.available_copies),
+      ]),
+    );
+
+    const data = books.map((book) => ({
+      ...book,
+      available_copies: availabilityMap.get(book.id) || 0,
+    }));
+
+    return {
+      data,
+      total,
+      page: safePage,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    };
+  }
+
+  // Consultar detalle de un libro activo
+  async findCatalogOne(id: number) {
+    const book = await this.bookRepository.findOne({
+      where: {
+        id,
+        is_active: true,
+      },
+      relations: {
+        category: true,
+      },
+    });
+
+    if (!book) {
+      throw new NotFoundException('Libro no encontrado');
+    }
+
+    const availableCopies = await this.copyRepository.count({
+      where: {
+        book_id: id,
+        status: CopyStatus.AVAILABLE,
+      },
+    });
+
+    return {
+      ...book,
+      available_copies: availableCopies,
+    };
+  }
+
+  // ==========================================
+  // OPERACIONES ADMINISTRATIVAS
+  // ==========================================
 
   // Buscar libro por ID
   async findOne(id: number) {

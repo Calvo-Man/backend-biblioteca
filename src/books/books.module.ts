@@ -6,10 +6,11 @@ import { Category } from '../categories/entities/category.entity';
 
 import { BooksController } from './books.controller';
 import { BooksService } from './books.service';
+import { Copy } from '../copies/entities/copy.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Book, Category]),
+    TypeOrmModule.forFeature([Book, Category,Copy]),
   ],
   controllers: [BooksController],
   providers: [BooksService],

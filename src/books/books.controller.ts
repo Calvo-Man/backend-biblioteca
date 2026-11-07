@@ -1,3 +1,4 @@
+
 import {
   Controller,
   Get,
@@ -32,6 +33,41 @@ export class BooksController {
   constructor(
     private readonly booksService: BooksService,
   ) {}
+
+  // ==========================================
+  // CATÁLOGO: ADMIN Y STUDENT
+  // ==========================================
+
+  @Get('catalog')
+  @Roles('ADMIN', 'STUDENT')
+  findCatalog(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe)
+    page: number,
+
+    @Query('limit', new DefaultValuePipe(12), ParseIntPipe)
+    limit: number,
+
+    @Query('search')
+    search?: string,
+  ) {
+    return this.booksService.findCatalog(
+      Math.max(1, page),
+      Math.min(100, Math.max(1, limit)),
+      search,
+    );
+  }
+
+  @Get('catalog/:id')
+  @Roles('ADMIN', 'STUDENT')
+  findCatalogOne(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.booksService.findCatalogOne(id);
+  }
+
+  // ==========================================
+  // OPERACIONES EXCLUSIVAS DEL ADMINISTRADOR
+  // ==========================================
 
   @Post()
   @UseInterceptors(
