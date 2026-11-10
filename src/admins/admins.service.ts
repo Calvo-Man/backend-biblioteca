@@ -19,22 +19,41 @@ export class AdminsService {
     private readonly adminRepository: Repository<Admin>,
   ) {}
 
-  // Crear administrador
+    // CREAR ADMINISTRADOR
   async create(dto: CreateAdminDto) {
     const existingAdmin = await this.adminRepository.findOne({
-      where: { username: dto.username },
+      where: [
+        { username: dto.username },
+        { email: dto.email },
+        { document_id: dto.document_id },
+      ],
     });
 
     if (existingAdmin) {
+      if (existingAdmin.username === dto.username) {
+        throw new ConflictException(
+          'El nombre de usuario ya está registrado',
+        );
+      }
+
+      if (existingAdmin.email === dto.email) {
+        throw new ConflictException(
+          'El correo electrónico ya está registrado',
+        );
+      }
+
       throw new ConflictException(
-        'El nombre de usuario ya está registrado',
+        'El documento ya está registrado',
       );
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     const admin = this.adminRepository.create({
-      ...dto,
+      full_name: dto.full_name,
+      document_id: dto.document_id,
+      email: dto.email,
+      username: dto.username,
       password: hashedPassword,
     });
 
@@ -43,7 +62,7 @@ export class AdminsService {
     return this.sanitizeAdmin(savedAdmin);
   }
 
-  // Listar administradores con paginación y búsqueda
+  // LISTAR ADMINISTRADORES CON PAGINACIÓN Y BÚSQUEDA
   async findAll(page = 1, limit = 10, search?: string) {
     const skip = (page - 1) * limit;
 
@@ -51,6 +70,8 @@ export class AdminsService {
       ? [
           { full_name: Like(`%${search}%`) },
           { username: Like(`%${search}%`) },
+          { email: Like(`%${search}%`) },
+          { document_id: Like(`%${search}%`) },
         ]
       : {};
 
@@ -71,6 +92,17 @@ export class AdminsService {
       totalPages: Math.ceil(total / limit),
     };
   }
+
+  // ELIMINAR INFORMACIÓN SENSIBLE
+  private sanitizeAdmin(admin: Admin) {
+    const {
+      password,
+      ...result
+    } = admin;
+
+    return result;
+  }
+
 
   // Buscar administrador por ID
   async findOne(id: number) {
@@ -140,9 +172,5 @@ export class AdminsService {
     return this.sanitizeAdmin(updatedAdmin);
   }
 
-  // Eliminar información sensible de la respuesta
-  private sanitizeAdmin(admin: Admin) {
-    const { password, ...result } = admin;
-    return result;
-  }
+
 }

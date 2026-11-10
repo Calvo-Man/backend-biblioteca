@@ -19,6 +19,9 @@ export class Student {
   @Column({ unique: true, length: 20 })
   document_number: string;
 
+  @Column({ length: 20 })
+  student_code: string;
+
   @Column({ unique: true, length: 50 })
   username: string;
 

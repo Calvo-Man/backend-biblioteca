@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 
 import { unlink } from 'fs/promises';
 import { join } from 'path';
@@ -49,6 +49,47 @@ export class BooksService {
         console.error('No se pudo eliminar la portada:', error);
       }
     }
+  }
+
+  // Agregar estadísticas de ejemplares a varios libros.
+  private async addCopyStats(books: Book[]) {
+    if (!books.length) return [];
+
+    const bookIds = books.map((book) => book.id);
+
+    const statistics = await this.copyRepository
+      .createQueryBuilder('copy')
+      .select('copy.book_id', 'book_id')
+      .addSelect('COUNT(copy.id)', 'total_copies')
+      .addSelect(
+        `SUM(
+          CASE
+            WHEN copy.status = :available THEN 1
+            ELSE 0
+          END
+        )`,
+        'available_copies',
+      )
+      .where('copy.book_id IN (:...bookIds)', { bookIds })
+      .setParameter('available', CopyStatus.AVAILABLE)
+      .groupBy('copy.book_id')
+      .getRawMany();
+
+    const statisticsMap = new Map(
+      statistics.map((item) => [
+        Number(item.book_id),
+        {
+          total_copies: Number(item.total_copies) || 0,
+          available_copies: Number(item.available_copies) || 0,
+        },
+      ]),
+    );
+
+    return books.map((book) => ({
+      ...book,
+      total_copies: statisticsMap.get(book.id)?.total_copies || 0,
+      available_copies: statisticsMap.get(book.id)?.available_copies || 0,
+    }));
   }
 
   // Crear libro
@@ -116,8 +157,10 @@ export class BooksService {
 
     const [books, total] = await query.getManyAndCount();
 
+    const data = await this.addCopyStats(books);
+
     return {
-      data: books,
+      data,
       total,
       page,
       limit,
@@ -228,7 +271,7 @@ export class BooksService {
   // OPERACIONES ADMINISTRATIVAS
   // ==========================================
 
-  // Buscar libro por ID
+  // Buscar libro por ID con estadísticas de ejemplares
   async findOne(id: number) {
     const book = await this.bookRepository.findOne({
       where: { id },
@@ -241,7 +284,9 @@ export class BooksService {
       throw new NotFoundException('Libro no encontrado');
     }
 
-    return book;
+    const [bookWithStats] = await this.addCopyStats([book]);
+
+    return bookWithStats;
   }
 
   // Actualizar libro

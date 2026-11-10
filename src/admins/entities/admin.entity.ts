@@ -14,6 +14,12 @@ export class Admin {
   id: number;
 
   @Column({ length: 100 })
+  email: string;
+
+  @Column({ length: 20 })
+  document_id: string;
+
+  @Column({ length: 100 })
   full_name: string;
 
   @Column({ unique: true, length: 50 })
